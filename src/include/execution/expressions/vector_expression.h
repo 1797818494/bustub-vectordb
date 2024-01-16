@@ -34,7 +34,7 @@ inline auto ComputeDistance(const std::vector<double> &left, const std::vector<d
       // IMPLEMENT ME
       double ans = 0;
       for (size_t i = 0; i < sz; i++) {
-        ans += left[i] * right[i];  
+        ans -= left[i] * right[i];
       }
       return ans;
     }

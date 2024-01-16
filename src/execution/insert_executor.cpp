@@ -35,7 +35,7 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   RID insert_rid;
   int insert_count = 0;
   while (child_executor_->Next(&insert_tuple, &insert_rid)) {
-    table_info->table_->InsertTuple(table_info->table_->GetTupleMeta(insert_rid), insert_tuple);
+    table_info->table_->InsertTuple(TupleMeta{0, false}, insert_tuple);
     std::vector<bustub::IndexInfo *> index_vec = exec_ctx_->GetCatalog()->GetTableIndexes(table_info->name_);
     for (auto index_info : index_vec) {
       VectorIndex *vec_index = dynamic_cast<VectorIndex *>(index_info->index_.get());
@@ -53,6 +53,7 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   std::vector<Value> vals;
   vals.push_back(Value(TypeId::INTEGER, insert_count));
   count_tuple_ = Tuple(vals, &plan_->OutputSchema());
+  *tuple = count_tuple_;
   return true;
 }
 
