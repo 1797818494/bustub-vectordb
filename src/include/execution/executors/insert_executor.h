@@ -70,6 +70,7 @@ class InsertExecutor : public AbstractExecutor {
 
   // Whether `Next` has been called.
   [[maybe_unused]] bool emitted_{false};
+  Tuple count_tuple_;
 };
 
 }  // namespace bustub
