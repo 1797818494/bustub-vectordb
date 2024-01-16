@@ -57,5 +57,6 @@ class SeqScanExecutor : public AbstractExecutor {
   [[maybe_unused]] TableHeap *table_heap_;
 
   // The table iterator. Initialize it in the `Init` function.
-  TableIterator iter_;
+  std::unique_ptr<TableIterator> iter_{nullptr};
+};  // namespace bustub
 }  // namespace bustub

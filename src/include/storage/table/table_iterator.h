@@ -46,6 +46,7 @@ class TableIterator {
   auto IsEnd() -> bool;
 
   auto operator++() -> TableIterator &;
+  auto GetLastRID() -> RID;
 
  private:
   TableHeap *table_heap_;

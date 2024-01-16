@@ -38,6 +38,7 @@ TableIterator::TableIterator(TableHeap *table_heap, RID rid, RID stop_at_rid)
 auto TableIterator::GetTuple() -> std::pair<TupleMeta, Tuple> { return table_heap_->GetTuple(rid_); }
 
 auto TableIterator::GetRID() -> RID { return rid_; }
+auto TableIterator::GetLastRID() -> RID { return stop_at_rid_; }
 
 auto TableIterator::IsEnd() -> bool { return rid_.GetPageId() == INVALID_PAGE_ID; }
 

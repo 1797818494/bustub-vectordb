@@ -18,7 +18,7 @@ namespace bustub {
 
 InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(child_executor) {}
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {}
 
 void InsertExecutor::Init() {
   // init child
@@ -34,7 +34,8 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple insert_tuple;
   RID insert_rid;
   int insert_count = 0;
-  while (table_info->table_->InsertTuple(table_info->table_->GetTupleMeta(), &insert_tuple)) {
+  while (child_executor_->Next(&insert_tuple, &insert_rid)) {
+    table_info->table_->InsertTuple(table_info->table_->GetTupleMeta(insert_rid), insert_tuple);
     std::vector<bustub::IndexInfo *> index_vec = exec_ctx_->GetCatalog()->GetTableIndexes(table_info->name_);
     for (auto index_info : index_vec) {
       VectorIndex *vec_index = dynamic_cast<VectorIndex *>(index_info->index_.get());
@@ -42,15 +43,16 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         auto key_vec_one = index_info->index_->GetKeyAttrs();
         BUSTUB_ASSERT(key_vec_one.size() == 1, "vector index not only has one vector type");
         std::vector<double> insert_vec =
-            insert_tuple.GetValue(child_executor_->GetOutputSchema(), key_vec_one[0]).GetVector();
+            insert_tuple.GetValue(&child_executor_->GetOutputSchema(), key_vec_one[0]).GetVector();
         vec_index->InsertVectorEntry(insert_vec, insert_rid);
       }
     }
+    insert_count++;
   }
   emitted_ = true;
   std::vector<Value> vals;
-  vals.push_back(insert_count);
-  count_tuple_ = Tuple(vals, plan_->output_schema_());
+  vals.push_back(Value(TypeId::INTEGER, insert_count));
+  count_tuple_ = Tuple(vals, &plan_->OutputSchema());
   return true;
 }
 

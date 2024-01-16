@@ -84,9 +84,9 @@ install_mac() {
 
 install_linux() {
   # Update apt-get.
-  apt-get -y update
+  aptitude -y update 
   # Install packages.
-  apt-get -y install \
+  aptitude -y install \
       build-essential \
       clang-14 \
       clang-format-14 \
