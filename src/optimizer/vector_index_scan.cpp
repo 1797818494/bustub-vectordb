@@ -41,7 +41,8 @@ auto MatchVectorIndex(const Catalog &catalog, table_oid_t table_oid, uint32_t co
         if (vector_index_match_method == "") {
           return index_info;
         }
-        if (vec_index->GetName().find(vector_index_match_method) != std::string::npos) {
+        if ((vector_index_match_method == "ivfflat" && index_info->index_type_ == IndexType::VectorIVFFlatIndex) ||
+            (vector_index_match_method == "hnsw" && index_info->index_type_ == IndexType::VectorHNSWIndex)) {
           return index_info;
         }
       }
