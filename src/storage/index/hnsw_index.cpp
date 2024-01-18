@@ -48,7 +48,7 @@ HNSWIndex::HNSWIndex(std::unique_ptr<IndexMetadata> &&metadata, BufferPoolManage
   std::random_device rand_dev;
   generator_ = std::mt19937(rand_dev());
 }
-
+typedef std::pair<std::vector<double>, size_t> PVS;
 auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &vertex_ids,
                      const std::vector<std::vector<double>> &vertices, size_t m, VectorExpressionType dist_fn)
     -> std::vector<size_t> {
@@ -57,7 +57,50 @@ auto SelectNeighbors(const std::vector<double> &vec, const std::vector<size_t> &
 
 auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, const std::vector<size_t> &entry_points)
     -> std::vector<size_t> {
-  return {};
+  auto greater_distance = [this, base_vector](const PVS &vec_a, const PVS &vec_b) {
+    return ComputeDistance(vec_a.first, base_vector, dist_fn_) > ComputeDistance(vec_b.first, base_vector, dist_fn_);
+  };
+  auto less_distance = [this, base_vector](const PVS &vec_a, const PVS &vec_b) {
+    return ComputeDistance(vec_a.first, base_vector, dist_fn_) < ComputeDistance(vec_b.first, base_vector, dist_fn_);
+  };
+  std::unordered_set<size_t> visited;
+  std::priority_queue<PVS, std::vector<PVS>, decltype(greater_distance)> min_heap(greater_distance);  // C
+  std::priority_queue<PVS, std::vector<PVS>, decltype(less_distance)> max_heap(less_distance);        // W
+  // entry -> C / W
+  for (auto id : entry_points) {
+    min_heap.push({vertices_[id], id});
+    max_heap.push({vertices_[id], id});
+    visited.insert(id);
+  }
+  while (!min_heap.empty()) {
+    auto node = min_heap.top();
+    min_heap.pop();
+    if (ComputeDistance(base_vector, node.first, dist_fn_) >
+        ComputeDistance(base_vector, max_heap.top().first, dist_fn_)) {
+      break;
+    }
+    for (auto neighbor : edges_[node.second]) {
+      if (!visited.count(neighbor)) {
+        visited.insert(neighbor);
+        max_heap.push({vertices_[neighbor], neighbor});
+        min_heap.push({vertices_[neighbor], neighbor});
+        // retain knn
+      }
+    }
+  }
+  while (!min_heap.empty()) {
+    min_heap.pop();
+  }
+  while (!max_heap.empty()) {
+    min_heap.push(max_heap.top());
+    max_heap.pop();
+  }
+  std::vector<size_t> result_rids;
+  for (size_t i = 0; i < limit && !min_heap.empty(); i++) {
+    result_rids.push_back(min_heap.top().second);
+    min_heap.pop();
+  }
+  return result_rids;
 }
 
 auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
@@ -65,6 +108,25 @@ auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
   // IMPLEMENT ME
   AddVertex(vertex_id);
+  auto vec_pos = SearchLayer(vec, ef_construction, std::vector<size_t>(1, DefaultEntryPoint()));
+  std::vector<size_t> reach_max_pos;
+  for (auto vertex : vec_pos) {
+    Connect(vertex, vertex_id);
+    if (edges_[vertex].size() == m_max_) {
+      reach_max_pos.push_back(vertex);
+    }
+  }
+  for (auto pos : reach_max_pos) {
+    // recompute the KNN and cut oters
+    auto knn_vec = SearchLayer(vertices_[pos], ef_construction, std::vector<size_t>(1, DefaultEntryPoint()));
+    for (auto target : edges_[pos]) {
+      if (std::find_if(knn_vec.begin(), knn_vec.end(), [target](size_t num) { return target == num; }) ==
+          knn_vec.end()) {
+        std::remove(edges_[target].begin(), edges_[target].end(), pos);
+        std::remove(edges_[pos].begin(), edges_[pos].end(), target);
+      }
+    }
+  }
 }
 
 void NSW::Connect(size_t vertex_a, size_t vertex_b) {
