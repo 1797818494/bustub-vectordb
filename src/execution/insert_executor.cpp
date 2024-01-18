@@ -35,16 +35,17 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   RID insert_rid;
   int insert_count = 0;
   while (child_executor_->Next(&insert_tuple, &insert_rid)) {
-    table_info->table_->InsertTuple(TupleMeta{0, false}, insert_tuple);
+    std::optional<RID> result_rid = table_info->table_->InsertTuple(TupleMeta{0, false}, insert_tuple);
     std::vector<bustub::IndexInfo *> index_vec = exec_ctx_->GetCatalog()->GetTableIndexes(table_info->name_);
     for (auto index_info : index_vec) {
       VectorIndex *vec_index = dynamic_cast<VectorIndex *>(index_info->index_.get());
       if (nullptr != vec_index) {
         auto key_vec_one = index_info->index_->GetKeyAttrs();
         BUSTUB_ASSERT(key_vec_one.size() == 1, "vector index not only has one vector type");
+        BUSTUB_ASSERT(result_rid.has_value(), "insert vector fail");
         std::vector<double> insert_vec =
             insert_tuple.GetValue(&child_executor_->GetOutputSchema(), key_vec_one[0]).GetVector();
-        vec_index->InsertVectorEntry(insert_vec, insert_rid);
+        vec_index->InsertVectorEntry(insert_vec, result_rid.value());
       }
     }
     insert_count++;
