@@ -107,7 +107,7 @@ auto NSW::AddVertex(size_t vertex_id) { in_vertices_.push_back(vertex_id); }
 
 auto NSW::Insert(const std::vector<double> &vec, size_t vertex_id, size_t ef_construction, size_t m) {
   // IMPLEMENT ME
-  AddVertex(vertex_id);
+  // AddVertex(vertex_id);
   auto vec_pos = SearchLayer(vec, ef_construction, std::vector<size_t>(1, DefaultEntryPoint()));
   std::vector<size_t> reach_max_pos;
   for (auto vertex : vec_pos) {
@@ -150,7 +150,13 @@ void HNSWIndex::BuildIndex(std::vector<std::pair<std::vector<double>, RID>> init
 }
 
 auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t limit) -> std::vector<RID> {
-  auto vertex_ids = layers_[0].SearchLayer(base_vector, limit, {layers_[0].DefaultEntryPoint()});
+  size_t max_level = layers_.size() - 1;
+  std::vector<size_t> eps(1, layers_.back().DefaultEntryPoint());
+
+  for (int i = max_level; i >= 0; i--) {
+    eps = layers_[i].SearchLayer(base_vector, 1, eps);
+  }
+  auto vertex_ids = layers_[0].SearchLayer(base_vector, limit, eps);
   std::vector<RID> result;
   result.reserve(vertex_ids.size());
   for (const auto &id : vertex_ids) {
@@ -158,10 +164,43 @@ auto HNSWIndex::ScanVectorKey(const std::vector<double> &base_vector, size_t lim
   }
   return result;
 }
+auto HNSWIndex::ComputeLevel() -> size_t {
+  // 生成一个 [0,1) 范围内的随机数
+  std::uniform_real_distribution<double> unif(0.0, 1.0);
+  double random_number = unif(generator_);
 
-void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
-  auto id = AddVertex(key, rid);
-  layers_[0].Insert(key, id, ef_construction_, m_);
+  // 计算 level 值
+  double level = -std::log(random_number) * m_l_;
+
+  // 向下取整
+  size_t floor_level = std::floor(level);
+
+  return floor_level;
 }
 
+void HNSWIndex::InsertVectorEntry(const std::vector<double> &key, RID rid) {
+  size_t random_level = ComputeLevel();
+  size_t max_level = layers_.size() - 1;
+  auto id = AddVertex(key, rid);
+  if (random_level > max_level) {
+    for (size_t i = max_level + 1; i <= random_level; i++) {
+      layers_.push_back(NSW{*vertices_, distance_fn_});  // use edges to identify the existing node
+      layers_[i].AddVertex(id);
+      layers_[i].Insert(key, id, ef_construction_, m_);
+    }
+  }
+  for (size_t i = 0; i <= std::min(random_level, max_level); i++) {
+    layers_[i].AddVertex(id);
+  }
+  std::cerr << "random level: " << random_level << " " << max_level << " " << layers_.size() << std::endl;
+  std::vector<size_t> eps(1, layers_.back().DefaultEntryPoint());
+  for (size_t i = layers_.size() - 1; i >= random_level + 1; i--) {
+    eps = layers_[i].SearchLayer(key, 1, eps);
+  }
+  for (int i = random_level; i >= 0; i--) {
+    eps = layers_[i].SearchLayer(key, ef_construction_, eps);
+    layers_[i].Insert(key, id, ef_construction_, m_);
+  }
+  // layers_[0].Insert(key, id, ef_construction_, m_);
+}
 }  // namespace bustub
