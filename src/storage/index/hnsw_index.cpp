@@ -85,6 +85,9 @@ auto NSW::SearchLayer(const std::vector<double> &base_vector, size_t limit, cons
         max_heap.push({vertices_[neighbor], neighbor});
         min_heap.push({vertices_[neighbor], neighbor});
         // retain knn
+        while (max_heap.size() > limit) {
+          max_heap.pop();
+        }
       }
     }
   }
