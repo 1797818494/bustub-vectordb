@@ -99,7 +99,7 @@ struct HashCmp {
 };
 typedef std::unordered_map<Vector, Vector, HashFunc, HashCmp> Vector_Vector_Map;
 typedef std::unordered_map<Vector, bool, HashFunc, HashCmp> Vector_Bool_Map;
-typedef std::unordered_map<Vector, bool, HashFunc, HashCmp> Vector_Double_Map;
+typedef std::unordered_map<Vector, double, HashFunc, HashCmp> Vector_Double_Map;
 typedef std::unordered_map<Vector, std::unordered_map<Vector, double, HashFunc, HashCmp>, HashFunc, HashCmp> VectorMap;
 void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) {
   if (initial_data.empty()) {
@@ -181,12 +181,19 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
           if (r_map[x]) {
             r_map[x] = false;
             d_x_c = ComputeDistance(x, c_map[x], distance_fn_);
+            // update l and u
+            l_map[x][c_map[x]] = d_x_c;
+            u_map[x] = std::min(u_map[x], d_x_c);
           } else {
             d_x_c = u_map[x];
           }
           // 3.b
           if (d_x_c > l_map[x][center] || d_x_c > d_center_map[center][c_map[x]] / 2) {
-            if (ComputeDistance(x, center, distance_fn_) < d_x_c) {
+            // update l and u
+            double dist = ComputeDistance(x, center, distance_fn_);
+            l_map[x][center] = dist;
+            u_map[x] = std::min(u_map[x], dist);
+            if (dist < d_x_c) {
               c_map[x] = center;
             }
           }
