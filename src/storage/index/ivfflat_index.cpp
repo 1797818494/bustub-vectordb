@@ -77,6 +77,30 @@ auto FindCentroids(const std::vector<std::pair<Vector, RID>> &data, const std::v
   return new_centroids;
 }
 
+struct HashFunc {
+  size_t operator()(const Vector &vec) const {
+    size_t ans = 0;
+    for (double v : vec) {
+      ans += v;
+    }
+    return ans;
+  }
+};
+struct HashCmp {
+  bool operator()(const Vector &a, const Vector &b) const {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+typedef std::unordered_map<Vector, Vector, HashFunc, HashCmp> Vector_Vector_Map;
+typedef std::unordered_map<Vector, bool, HashFunc, HashCmp> Vector_Bool_Map;
+typedef std::unordered_map<Vector, bool, HashFunc, HashCmp> Vector_Double_Map;
+typedef std::unordered_map<Vector, std::unordered_map<Vector, double, HashFunc, HashCmp>, HashFunc, HashCmp> VectorMap;
 void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) {
   if (initial_data.empty()) {
     return;
@@ -87,9 +111,10 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
     size_t index = rand() % lists_;
     buckets[index].push_back(vert);
   }
+
   for (size_t i = 0; i < buckets.size(); i++) {
     const auto &vec = buckets[i];
-    if (vec.empty()) continue;
+    BUSTUB_ASSERT(!vec.empty(), "must not empty");
     Vector origin_vec(vec[0].first.size(), 0);
     for (size_t j = 0; j < vec.size(); j++) {
       VectorAdd(origin_vec, vec[j].first);
@@ -97,8 +122,127 @@ void IVFFlatIndex::BuildIndex(std::vector<std::pair<Vector, RID>> initial_data) 
     VectorScalarDiv(origin_vec, centroids_.size());
     centroids_.push_back(origin_vec);
   }
-  for (size_t i = 0; i < 500; i++) {
-    centroids_ = FindCentroids(initial_data, centroids_, distance_fn_);
+
+  VectorMap l_map;
+  VectorMap d_map;  // x c
+  Vector_Double_Map u_map;
+  Vector_Vector_Map c_map;
+  Vector_Bool_Map r_map;
+  for (auto data : initial_data) {
+    for (auto center : centroids_) {
+      l_map[data.first][center] = 0;
+    }
+  }
+  for (auto data : initial_data) {
+    double cur_max = DBL_MAX;
+    Vector vec;
+    for (auto center : centroids_) {
+      // compute
+      double dis = ComputeDistance(data.first, center, distance_fn_);
+      if (cur_max > dis) {
+        vec = center;
+        cur_max = dis;
+      }
+      l_map[data.first][center] = dis;
+    }
+    u_map[data.first] = cur_max;
+    c_map[data.first] = vec;
+  }
+  // for repeat
+  for (int i = 0; i < 500; i++) {
+    VectorMap d_center_map;
+    Vector_Double_Map s_map;
+    Vector_Bool_Map r_map;
+    Vector_Vector_Map m_map;
+    for (auto data : initial_data) {
+      r_map[data.first] = true;
+    }
+    // step 1
+    for (auto center1 : centroids_) {
+      double max_ans = DBL_MAX;
+      for (auto center2 : centroids_) {
+        if (!HashCmp()(center1, center2)) {
+          double dis = ComputeDistance(center1, center2, distance_fn_);
+          max_ans = std::min(dis, max_ans);
+          d_center_map[center1][center2] = dis;
+        }
+      }
+      s_map[center1] = max_ans / 2;
+    }
+    // step 2~3
+    for (auto data : initial_data) {
+      if (u_map[data.first] > s_map[c_map[data.first]]) continue;
+      auto x = data.first;
+      for (auto center : centroids_) {
+        if (!HashCmp()(center, c_map[x]) &&
+            u_map[data.first] > std::max(l_map[x][center], d_center_map[center][c_map[x]] / 2)) {
+          // 3.a
+          double d_x_c;
+          if (r_map[x]) {
+            r_map[x] = false;
+            d_x_c = ComputeDistance(x, c_map[x], distance_fn_);
+          } else {
+            d_x_c = u_map[x];
+          }
+          // 3.b
+          if (d_x_c > l_map[x][center] || d_x_c > d_center_map[center][c_map[x]] / 2) {
+            if (ComputeDistance(x, center, distance_fn_) < d_x_c) {
+              c_map[x] = center;
+            }
+          }
+        }
+      }
+    }
+    // 4. compute m(c)
+    std::unordered_map<Vector, std::vector<Vector>, HashFunc, HashCmp> aggregate_map;
+    for (auto data : initial_data) {
+      aggregate_map[c_map[data.first]].push_back(data.first);
+    }
+    for (auto &[center, vec] : aggregate_map) {
+      BUSTUB_ASSERT(vec.size() >= 1, "vec.size is 0");
+      Vector ans(vec[0].size(), 0);
+      for (auto v : vec) {
+        VectorAdd(ans, v);
+      }
+      VectorScalarDiv(ans, vec.size());
+      m_map[center] = ans;
+    }
+    // init
+    for (auto center : centroids_) {
+      if (!m_map.count(center)) {
+        d_center_map[center][center] = 0;
+        continue;
+      }
+      d_center_map[center][m_map[center]] = ComputeDistance(center, m_map[center], distance_fn_);
+    }
+    // 5
+    for (auto data : initial_data) {
+      for (auto center : centroids_) {
+        l_map[data.first][center] = std::max(0.0, l_map[data.first][center] - d_center_map[center][m_map[center]]);
+      }
+    }
+    // 6
+    for (auto data : initial_data) {
+      u_map[data.first] = u_map[data.first] + d_center_map[c_map[data.first]][m_map[c_map[data.first]]];
+      r_map[data.first] = true;
+    }
+    // ( implement extra part): can optizmar use index stanfor the center
+    for (auto data : initial_data) {
+      auto vec = c_map[data.first];
+      if (m_map.count(vec)) {
+        c_map[data.first] = m_map[vec];
+      }
+    }
+    // 7
+    centroids_.clear();
+    for (auto [center_orgin, center] : m_map) {
+      if (center.size() == 0) {
+        centroids_.push_back(center_orgin);
+        continue;
+      }
+      centroids_.push_back(center);
+    }
+    BUSTUB_ASSERT(centroids_.size() == lists_, "not match size");
   }
 
   // insert may be after the build
